@@ -1,14 +1,22 @@
-# Personal Radio feasibility demo
+# Personal Radio pilot and feasibility demo
 
-The [macOS app](build/Personal%20Radio%20Prototype.app) plays three original sample tracks, presenter intros, a fictional news bulletin and a sample Cornwall roadworks report. It plays everything locally. The simulated clock moves to known song boundaries so a complete scenario takes about a minute.
+The [macOS app](build/Personal%20Radio%20Prototype.app) starts in **My playlist**. Import DRM-free music, arrange the playlist and press **Play**. A system voice introduces each song. Switch to **Sample demo** to hear the bundled tracks and try simulated news and Cornwall roadworks.
 
 ## Run on this Mac
 
-Double-click **Personal Radio Prototype.app** inside `build`, select a scenario, and press **Play**. Press Space to play or pause. Restart returns to the start of the current scenario, and Skip advances playback. The session log shows what played and which reports were rejected.
+Double-click **Personal Radio Prototype.app** inside `build`. Press Space to play or pause. Restart returns to the start of the session and Skip advances playback. The session log shows what played and which sample reports were rejected.
 
-Build again from this folder with `bash build-mac.sh`. The build uses the Mac Command Line Tools and Swift 6. It generates a local bundle for macOS 14 or later and signs it ad hoc. No dependencies need downloading.
+Run `bash build-mac.sh` from this folder to build the app using the Mac Command Line Tools and Swift 6. The script generates a local bundle for macOS 14 or later and signs it ad hoc.
 
-## Try the listening sequence
+## Import your music
+
+1. Select **My playlist** and choose **Import music files**. Select DRM-free MP3, M4A, WAV or AIFF files that you can use.
+2. Use the arrows to change the order and the bin button to remove a track. The app saves private copies and keeps your original files in place. The playlist can hold up to 100 tracks, 100 MB per track and 2 GB in total.
+3. Press **Play** to hear the songs in playlist order. Skip during an announcement jumps to its song. Skip during a song advances to the next announcement. Use the device volume for music and speech. Restart or finish the session to edit the playlist.
+
+## Try the sample listening sequence
+
+Select **Sample demo** and choose a scenario. The simulated clock jumps to known song boundaries so a complete scenario takes about a minute.
 
 | Scenario | What to check |
 | --- | --- |
@@ -26,6 +34,6 @@ Open `PersonalRadioPrototype.xcodeproj` in full Xcode. Select the **PersonalRadi
 
 ## Verification and scope
 
-The macOS app was built and opened locally. Five muted playback checks using short WAV fixtures passed for normal ordering, late news, stale reports, reopened roads and pause/skip/resume/reset after a simulated disconnect. The demo ships longer bundled clips for listening.
+The sample demo ships longer bundled clips for listening. The [feasibility demo test report](UI-Test-Report.md) records the original demo checks.
 
-A signed build on the actual iPhone and car is still needed to establish locked playback, interruptions and CarPlay controls. Live feeds, subscription music, and live Cornwall coverage are outside this prototype. Music is original synthesis. The speech clips use the installed macOS Daniel voice and are for this personal, non-commercial demo. [Apple macOS licence](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf#page=3)
+A signed build on the target iPhone and car is still needed to verify locked playback, interruptions and CarPlay controls. Live news and Cornwall coverage remain pilot milestones. The bundled music is original synthesis. The bundled speech clips use the installed macOS Daniel voice for this personal, non-commercial demo. [Apple macOS licence](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf#page=3)

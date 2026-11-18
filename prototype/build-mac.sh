@@ -20,6 +20,7 @@ xcrun swiftc \
   "$root/Sources/PersonalRadioApp.swift" \
   "$root/Sources/PrototypeView.swift" \
   "$root/Sources/PlaybackModel.swift" \
+  "$root/Sources/LocalPlaylist.swift" \
   -o "$contents/MacOS/PersonalRadioPrototype"
 
 codesign --force --sign - --timestamp=none "$app"
