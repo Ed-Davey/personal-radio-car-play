@@ -30,7 +30,7 @@ For a device build, open [the Xcode project](prototype/PersonalRadioPrototype.xc
 
 ## Contributing
 
-Branch V1 feature work from `V1`, the integration and test branch. Merge feature branches into `V1` for testing. Open a promotion pull request into `dev` when the changes in scope are ready. A PR from `V1` includes every change on `V1` that has yet to reach `dev`, so check the diff before opening it.
+Create each feature branch from `dev`. Merge the feature branch into `V1` for integration testing, then open a pull request from that feature branch into `dev`. Keep `V1` available for testing features together while their individual PRs are under review.
 
 Summarise what changed, how you tested it and any device checks still needed. Have Codex review the PR, address its findings and rerun the review on the latest revision. Request human approval when the PR is ready to merge. When build steps, demo behaviour or test results change, update this README and the relevant project document in the same PR.
 
