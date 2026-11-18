@@ -1,0 +1,221 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		D61000000000000000000001 /* PersonalRadioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000001 /* PersonalRadioApp.swift */; };
+		D61000000000000000000002 /* PrototypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000002 /* PrototypeView.swift */; };
+		D61000000000000000000003 /* PlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000003 /* PlaybackModel.swift */; };
+		D61000000000000000000004 /* Audio in Resources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000004 /* Audio */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		D62000000000000000000001 /* PersonalRadioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalRadioApp.swift; sourceTree = "<group>"; };
+		D62000000000000000000002 /* PrototypeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrototypeView.swift; sourceTree = "<group>"; };
+		D62000000000000000000003 /* PlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackModel.swift; sourceTree = "<group>"; };
+		D62000000000000000000004 /* Audio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Audio; sourceTree = "<group>"; };
+		D62000000000000000000005 /* Info-iOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
+		D62000000000000000000006 /* PersonalRadioPrototype.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PersonalRadioPrototype.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D63000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D64000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				D64000000000000000000002 /* Sources */,
+				D64000000000000000000003 /* Assets */,
+				D64000000000000000000004 /* Configuration */,
+				D64000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D64000000000000000000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				D62000000000000000000001 /* PersonalRadioApp.swift */,
+				D62000000000000000000002 /* PrototypeView.swift */,
+				D62000000000000000000003 /* PlaybackModel.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		D64000000000000000000003 /* Assets */ = {
+			isa = PBXGroup;
+			children = (D62000000000000000000004 /* Audio */,);
+			path = Assets;
+			sourceTree = "<group>";
+		};
+		D64000000000000000000004 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (D62000000000000000000005 /* Info-iOS.plist */,);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		D64000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (D62000000000000000000006 /* PersonalRadioPrototype.app */,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D65000000000000000000001 /* PersonalRadioPrototype */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D69000000000000000000002 /* Target configuration list */;
+			buildPhases = (
+				D63000000000000000000002 /* Sources */,
+				D63000000000000000000001 /* Frameworks */,
+				D63000000000000000000003 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = PersonalRadioPrototype;
+			productName = PersonalRadioPrototype;
+			productReference = D62000000000000000000006 /* PersonalRadioPrototype.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D66000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					D65000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+						SystemCapabilities = {
+							com.apple.BackgroundModes = {enabled = 1; };
+						};
+					};
+				};
+			};
+			buildConfigurationList = D69000000000000000000001 /* Project configuration list */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = D64000000000000000000001;
+			productRefGroup = D64000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (D65000000000000000000001 /* PersonalRadioPrototype */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D63000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (D61000000000000000000004 /* Audio in Resources */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D63000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D61000000000000000000001 /* PersonalRadioApp.swift in Sources */,
+				D61000000000000000000002 /* PrototypeView.swift in Sources */,
+				D61000000000000000000003 /* PlaybackModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		D68000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D68000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		D68000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.PersonalRadioPrototype;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D68000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.PersonalRadioPrototype;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D69000000000000000000001 /* Project configuration list */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (D68000000000000000000001 /* Debug */, D68000000000000000000002 /* Release */,);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D69000000000000000000002 /* Target configuration list */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (D68000000000000000000003 /* Debug */, D68000000000000000000004 /* Release */,);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D66000000000000000000001 /* Project object */;
+}
