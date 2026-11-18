@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct PersonalRadioApp: App {
-    @State private var playback = PlaybackModel()
+    @State private var playback = PlaybackModel(mode: .pilot)
 
     var body: some Scene {
         WindowGroup {

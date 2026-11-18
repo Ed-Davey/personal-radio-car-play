@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private let backdrop = Color(red: 0.043, green: 0.063, blue: 0.072)
 private let panel = Color(red: 0.074, green: 0.103, blue: 0.118)
@@ -8,6 +9,8 @@ private let mint = Color(red: 0.68, green: 0.87, blue: 0.79)
 
 struct PrototypeView: View {
     @Bindable var playback: PlaybackModel
+    @State private var importingFiles = false
+    @State private var playlistMessage: String?
 
     var body: some View {
         GeometryReader { geometry in
@@ -41,6 +44,17 @@ struct PrototypeView: View {
         }
         .background(backdrop.ignoresSafeArea())
         .tint(mint)
+        .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            Task { @MainActor in
+                guard playback.canEditPlaylist, let playlist = playback.playlist else { return }
+                do {
+                    let tracks = try await playlist.importTracks(from: result.get())
+                    playlistMessage = tracks.count == 1 ? "Added one track." : "Added \(tracks.count) tracks."
+                } catch {
+                    playlistMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -56,7 +70,7 @@ struct PrototypeView: View {
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 10)
-            Label("Local demo", systemImage: "internaldrive")
+            Label(playback.mode == .demo ? "Sample demo" : "Private pilot", systemImage: "internaldrive")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(muted)
                 .padding(.horizontal, 11)
@@ -100,6 +114,7 @@ struct PrototypeView: View {
             VStack(spacing: 7) {
                 ProgressView(value: playback.progress)
                     .accessibilityLabel("Playback progress")
+                    .accessibilityValue("\(formatDuration(playback.elapsed)) of \(formatDuration(playback.duration))")
                 HStack {
                     Text(formatDuration(playback.elapsed))
                     Spacer()
@@ -112,7 +127,7 @@ struct PrototypeView: View {
 
             HStack(spacing: 20) {
                 transportButton("Restart session", symbol: "arrow.counterclockwise", action: playback.reset)
-                    .help("Return to the start of the scenario")
+                    .help("Return to the beginning of the session")
                 Button(action: playback.togglePlayback) {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 22, weight: .semibold))
@@ -122,6 +137,7 @@ struct PrototypeView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
+                .disabled(!playback.canPlay)
                 #if os(macOS)
                 .keyboardShortcut(.space, modifiers: [])
                 #endif
@@ -129,15 +145,17 @@ struct PrototypeView: View {
                     .disabled(!playback.isPlaying && !playback.isPaused)
             }
 
-            HStack(spacing: 9) {
-                Image(systemName: "speaker.wave.2")
-                    .foregroundStyle(muted)
-                    .accessibilityHidden(true)
-                Slider(value: $playback.volume, in: 0...1) { Text("Volume") }
-                    .labelsHidden()
-                    .frame(maxWidth: 124)
+            if playback.mode == .demo {
+                HStack(spacing: 9) {
+                    Image(systemName: "speaker.wave.2")
+                        .foregroundStyle(muted)
+                        .accessibilityHidden(true)
+                    Slider(value: $playback.volume, in: 0...1) { Text("Volume") }
+                        .labelsHidden()
+                        .frame(maxWidth: 124)
+                }
+                .font(.caption)
             }
-            .font(.caption)
 
             if let error = playback.assetError {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -202,41 +220,123 @@ struct PrototypeView: View {
 
     private var controls: some View {
         card("Session controls", symbol: "slider.horizontal.3") {
-            Picker("Scenario", selection: Binding(get: { playback.scenario }, set: { playback.selectScenario($0) })) {
-                ForEach(PlaybackScenario.allCases) { scenario in
-                    Text(scenario.rawValue).tag(scenario)
+            Picker("Source", selection: Binding(get: { playback.mode }, set: { playback.selectMode($0) })) {
+                ForEach(ListeningMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
                 }
             }
             .pickerStyle(.menu)
-            Text("Changing scenario restarts the session. Audio and road reports are sample material.")
-                .font(.caption)
-                .foregroundStyle(muted)
-                .fixedSize(horizontal: false, vertical: true)
             Divider()
-            Toggle("Hourly news", isOn: $playback.newsEnabled)
-            Toggle("Cornwall roadworks", isOn: $playback.worksEnabled)
-            Divider()
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Simulated clock")
+            if playback.mode == .demo {
+                Picker("Scenario", selection: Binding(get: { playback.scenario }, set: { playback.selectScenario($0) })) {
+                    ForEach(PlaybackScenario.allCases) { scenario in
+                        Text(scenario.rawValue).tag(scenario)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text("Changing scenario restarts the session. Audio and road reports are sample material.")
                     .font(.caption)
                     .foregroundStyle(muted)
-                Text(demoClock(playback.demoTime))
-                    .font(.title3.monospacedDigit().weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Hourly news", isOn: $playback.newsEnabled)
+                Toggle("Cornwall roadworks", isOn: $playback.worksEnabled)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Simulated clock")
+                        .font(.caption)
+                        .foregroundStyle(muted)
+                    Text(demoClock(playback.demoTime))
+                        .font(.title3.monospacedDigit().weight(.medium))
+                }
+                Button(action: playback.stopForRouteChange) {
+                    Label("Simulate car disconnect", systemImage: "cable.connector.slash")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!playback.isPlaying)
+            } else {
+                playlistControls
             }
-            Button(action: playback.stopForRouteChange) {
-                Label("Simulate car disconnect", systemImage: "cable.connector.slash")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var playlistControls: some View {
+        if let playlist = playback.playlist {
+            Button {
+                importingFiles = true
+            } label: {
+                Label("Import music files", systemImage: "plus")
             }
             .buttonStyle(.bordered)
-            .disabled(!playback.isPlaying)
+            .disabled(!playback.canEditPlaylist)
+            if playlist.isImporting {
+                ProgressView("Importing audio files")
+            } else if playlist.tracks.isEmpty {
+                Text("Add DRM-free audio files to start a session.")
+                    .font(.caption)
+                    .foregroundStyle(muted)
+            } else if !playback.canEditPlaylist {
+                Text("Restart the session to edit the playlist.")
+                    .font(.caption)
+                    .foregroundStyle(muted)
+            }
+            if !playlist.tracks.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(playlist.tracks.enumerated()), id: \.element.id) { index, track in
+                            HStack(spacing: 8) {
+                                Text(track.title)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Button {
+                                    changePlaylist { try playlist.move(from: IndexSet(integer: index), to: index - 1) }
+                                } label: { Image(systemName: "chevron.up") }
+                                .accessibilityLabel("Move \(track.title) up")
+                                .disabled(index == 0)
+                                Button {
+                                    changePlaylist { try playlist.move(from: IndexSet(integer: index), to: index + 2) }
+                                } label: { Image(systemName: "chevron.down") }
+                                .accessibilityLabel("Move \(track.title) down")
+                                .disabled(index == playlist.tracks.count - 1)
+                                Button {
+                                    changePlaylist { try playlist.remove(at: IndexSet(integer: index)) }
+                                } label: { Image(systemName: "trash") }
+                                .accessibilityLabel("Remove \(track.title) from playlist")
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!playback.canEditPlaylist)
+                }
+                .frame(height: min(CGFloat(playlist.tracks.count) * 33, 180))
+            }
+            if let playlistMessage {
+                Text(playlistMessage)
+                    .font(.caption)
+                    .foregroundStyle(muted)
+            }
+        } else if let error = playback.playlistLoadError {
+            Label(error, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+        }
+    }
+
+    private func changePlaylist(_ change: () throws -> Void) {
+        guard playback.canEditPlaylist else { return }
+        do {
+            try change()
+            playlistMessage = nil
+        } catch {
+            playlistMessage = error.localizedDescription
         }
     }
 
     private var queue: some View {
         card("Up next", symbol: "list.bullet") {
             if playback.upcoming.isEmpty {
-                Text("No more items this session.")
+                Text(playback.canPlay ? "No more items this session." : "Import tracks to build your queue.")
                     .foregroundStyle(muted)
                     .font(.subheadline)
             }
@@ -316,7 +416,7 @@ struct PrototypeView: View {
         case .announcement: "PRESENTER"
         case .news: "SAMPLE BULLETIN"
         case .travel: "SAMPLE ROADWORKS"
-        case .idle: "DEMO SESSION"
+        case .idle: playback.mode == .demo ? "DEMO SESSION" : "PRIVATE PLAYLIST"
         }
     }
 

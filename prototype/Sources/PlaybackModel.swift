@@ -23,17 +23,37 @@ enum PlaybackScenario: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+enum ListeningMode: String, CaseIterable, Identifiable {
+    case pilot = "My playlist"
+    case demo = "Sample demo"
+
+    var id: Self { self }
+}
+
 struct PlaybackEvent: Identifiable {
     let id = UUID()
     let time: Date
     let message: String
 }
 
+private enum AudioSource {
+    case fixture(String)
+    case file(URL)
+    case speech(String)
+}
+
+private struct SessionTrack {
+    let title: String
+    let artist: String?
+    let source: AudioSource
+    let introduction: AudioSource
+}
+
 private struct AudioSegment {
     let kind: PlaybackKind
     let title: String
     let subtitle: String
-    let filename: String
+    let source: AudioSource
 }
 
 private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
@@ -52,12 +72,34 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 }
 
+private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
+    private let complete: @Sendable (Bool) -> Void
+
+    init(complete: @escaping @Sendable (Bool) -> Void) {
+        self.complete = complete
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        complete(true)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        complete(false)
+    }
+}
+
 @MainActor @Observable final class PlaybackModel {
-    private static let tracks = [
+    private static let outputError = "Audio output could not start. Check the output and press Play to retry."
+    private static let sessionError = "Audio session unavailable. Press Play to try again."
+
+    private static let demoTracks = [
         (title: "Harbour Lights", artist: "The Breakwater Club"),
         (title: "Low Tide", artist: "Sundown Parcel"),
         (title: "Headland Air", artist: "North Marker")
-    ]
+    ].enumerated().map { index, song in
+        SessionTrack(title: song.title, artist: song.artist, source: .fixture("track-\(index + 1)"),
+                     introduction: .fixture("intro-\(index + 1)"))
+    }
 
     // 18 November 2026, 10:00 GMT. The demonstration jumps to sample boundary
     // times so each scenario can be heard within one short listening session.
@@ -74,6 +116,9 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     private(set) var phaseLog: [PlaybackEvent] = []
     private(set) var scenario = PlaybackScenario.standard
     private(set) var assetError: String?
+    private(set) var mode: ListeningMode
+    let playlist: LocalPlaylist?
+    let playlistLoadError: String?
     var worksEnabled = true
     var newsEnabled = true
 
@@ -87,16 +132,22 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 
     var isPaused: Bool { !isPlaying && currentKind != .idle }
+    var canEditPlaylist: Bool { currentKind == .idle && playlist?.isImporting == false }
+    var canPlay: Bool {
+        mode == .demo || isPlaying || isPaused || (canEditPlaylist && playlist?.tracks.isEmpty == false)
+    }
     var progress: Double { duration > 0 ? min(1, elapsed / duration) : 0 }
     var upcoming: [String] {
         if currentKind == .idle {
-            return completed ? [] : Self.tracks.map(\.title)
+            return completed && mode == .demo ? [] : selectedTracks.map(\.title)
         }
         if currentKind == .track {
-            return Self.tracks.dropFirst(trackIndex + 1).map(\.title)
+            return sessionTracks.dropFirst(trackIndex + 1).map(\.title)
         }
-        return pending.filter { $0.kind == .news || $0.kind == .travel }.map(\.title)
-            + Self.tracks.dropFirst(trackIndex).map(\.title)
+        let reports = pending.filter {
+            ($0.kind == .news && newsEnabled) || ($0.kind == .travel && worksEnabled)
+        }
+        return reports.map(\.title) + sessionTracks.dropFirst(trackIndex).map(\.title)
     }
 
     @ObservationIgnored private let bundle: Bundle
@@ -105,6 +156,14 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     @ObservationIgnored private var audioStart = PlaybackModel.startTime
     @ObservationIgnored private var playerID: UUID?
     @ObservationIgnored private var delegate: AudioCompletion?
+    @ObservationIgnored private var speaker: AVSpeechSynthesizer?
+    @ObservationIgnored private var speechDelegate: SpeechCompletion?
+    @ObservationIgnored private var speechDeadline: Task<Void, Never>?
+    @ObservationIgnored private var speechText: String?
+    #if os(iOS)
+    @ObservationIgnored private var hasActiveAudioSession = false
+    #endif
+    private var sessionTracks: [SessionTrack] = []
     private var trackIndex = 0
     private var pending: [AudioSegment] = []
     private var handledNews = false
@@ -112,8 +171,17 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     private var loggedLateNews = false
     private var completed = false
 
-    init(resourceBundle: Bundle = .main) {
+    init(resourceBundle: Bundle = .main, mode: ListeningMode = .demo, playlistDirectory: URL? = nil) {
         bundle = resourceBundle
+        self.mode = mode
+        do {
+            playlist = try LocalPlaylist(directory: playlistDirectory)
+            playlistLoadError = nil
+        } catch {
+            playlist = nil
+            playlistLoadError = error.localizedDescription
+        }
+        setReadyDisplay()
         #if os(iOS)
         registerSystemControls()
         #endif
@@ -132,20 +200,25 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
         reset()
     }
 
+    func selectMode(_ selection: ListeningMode) {
+        guard mode != selection else { return }
+        mode = selection
+        reset()
+    }
+
     func reset() {
         discardPlayer()
+        releaseAudioSession()
         pending = []
+        sessionTracks = []
         trackIndex = 0
         handledNews = false
         handledTravel = false
         loggedLateNews = false
         completed = false
         assetError = nil
-        demoTime = Self.startTime
         phaseLog = []
-        currentTitle = "Ready to listen"
-        currentSubtitle = "Start your sample listening session."
-        currentKind = .idle
+        setReadyDisplay()
         publishNowPlaying()
     }
 
@@ -161,7 +234,7 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
         discardPlayer()
         if skippingTrack {
             trackIndex += 1
-            guard trackIndex < Self.tracks.count else {
+            guard trackIndex < sessionTracks.count else {
                 completeSession()
                 return
             }
@@ -173,12 +246,16 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 
     private func play() {
-        guard !isPlaying else { return }
+        guard !isPlaying, canPlay else { return }
+        if completed { reset() }
         guard configureAudioSession() else { return }
         if let player {
             begin(player)
+        } else if let speechText {
+            speak(speechText)
         } else {
-            if completed || currentKind != .idle { reset() }
+            sessionTracks = selectedTracks
+            guard !sessionTracks.isEmpty else { return }
             record("Session started")
             pending = [announcement(0), track(0)]
             loadNext(autoplay: true)
@@ -186,8 +263,10 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 
     private func pause(_ message: String) {
-        guard let player, isPlaying else { return }
-        player.pause()
+        guard isPlaying else { return }
+        player?.pause()
+        speaker?.pauseSpeaking(at: .immediate)
+        speechDeadline?.cancel()
         updateProgress()
         isPlaying = false
         stopTimer()
@@ -196,14 +275,32 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 
     private func announcement(_ index: Int) -> AudioSegment {
-        let song = Self.tracks[index]
+        let song = sessionTracks[index]
         return AudioSegment(kind: .announcement, title: "Introducing \(song.title)",
-                            subtitle: "Presenter · \(song.artist)", filename: "intro-\(index + 1)")
+                            subtitle: song.artist.map { "Presenter · \($0)" } ?? "Presenter",
+                            source: song.introduction)
     }
 
     private func track(_ index: Int) -> AudioSegment {
-        let song = Self.tracks[index]
-        return AudioSegment(kind: .track, title: song.title, subtitle: song.artist, filename: "track-\(index + 1)")
+        let song = sessionTracks[index]
+        return AudioSegment(kind: .track, title: song.title, subtitle: song.artist ?? "Imported track", source: song.source)
+    }
+
+    private var selectedTracks: [SessionTrack] {
+        if mode == .demo { return Self.demoTracks }
+        guard let playlist else { return [] }
+        return playlist.tracks.map { track in
+            let artist = track.artist.map { ", by \($0)" } ?? ""
+            return SessionTrack(title: track.title, artist: track.artist, source: .file(playlist.audioURL(for: track)),
+                                introduction: .speech("Up next, \(track.title)\(artist)."))
+        }
+    }
+
+    private func setReadyDisplay() {
+        demoTime = mode == .demo ? Self.startTime : .now
+        currentTitle = "Ready to listen"
+        currentSubtitle = mode == .demo ? "Start your sample listening session." : "Play your imported tracks in playlist order."
+        currentKind = .idle
     }
 
     private func loadNext(autoplay: Bool) {
@@ -212,11 +309,20 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
             if segment.kind == .news && !newsEnabled || segment.kind == .travel && !worksEnabled {
                 continue
             }
-            guard let url = bundle.url(forResource: segment.filename, withExtension: "wav", subdirectory: "Audio")
-                ?? bundle.url(forResource: segment.filename, withExtension: "wav"),
-                  let next = try? AVAudioPlayer(contentsOf: url), next.duration > 0 else {
+            if case .speech(let text) = segment.source {
+                prepareDisplay(for: segment)
+                speechText = text
+                if autoplay { speak(text) }
+                else { publishNowPlaying() }
+                return
+            }
+            guard let url = audioURL(for: segment.source),
+                  let next = try? AVAudioPlayer(contentsOf: url), next.duration.isFinite, next.duration > 0 else {
                 recordAssetError("Missing or invalid audio for \(segment.title).")
-                if segment.kind == .track { break }
+                if segment.kind == .track {
+                    completeSession(failed: true)
+                    return
+                }
                 continue
             }
             let identity = UUID()
@@ -224,16 +330,13 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
                 Task { @MainActor [weak self] in self?.finished(identity, success: success) }
             }
             next.delegate = completion
-            next.volume = Float(outputVolume)
+            next.volume = mode == .demo ? Float(outputVolume) : 1
             next.prepareToPlay()
             delegate = completion
             playerID = identity
             player = next
-            currentKind = segment.kind
-            currentTitle = segment.title
-            currentSubtitle = segment.subtitle
+            prepareDisplay(for: segment)
             duration = next.duration
-            audioStart = demoTime
             if autoplay {
                 begin(next)
             } else {
@@ -244,14 +347,72 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
         completeSession()
     }
 
-    private func begin(_ source: AVAudioPlayer) {
-        let currentTime = source.currentTime
-        guard source.play() else {
-            recordAssetError("Audio output could not start. Check the output and press Play to retry.")
+    private func audioURL(for source: AudioSource) -> URL? {
+        switch source {
+        case .fixture(let name):
+            bundle.url(forResource: name, withExtension: "wav", subdirectory: "Audio")
+                ?? bundle.url(forResource: name, withExtension: "wav")
+        case .file(let url): url
+        case .speech: nil
+        }
+    }
+
+    private func prepareDisplay(for segment: AudioSegment) {
+        currentKind = segment.kind
+        currentTitle = segment.title
+        currentSubtitle = segment.subtitle
+        audioStart = demoTime
+    }
+
+    private func speak(_ text: String) {
+        if let speaker, let identity = playerID, speaker.isPaused, speaker.continueSpeaking() {
+            isPlaying = true
+            record("Resumed \(currentTitle)")
+            watchSpeech(identity)
             publishNowPlaying()
             return
         }
-        assetError = nil
+        speaker?.delegate = nil
+        speaker?.stopSpeaking(at: .immediate)
+        let identity = UUID()
+        playerID = identity
+        let synthesizer = AVSpeechSynthesizer()
+        let completion = SpeechCompletion { [weak self] success in
+            Task { @MainActor [weak self] in self?.finished(identity, success: success) }
+        }
+        speechDelegate = completion
+        synthesizer.delegate = completion
+        #if os(iOS)
+        synthesizer.usesApplicationAudioSession = true
+        #endif
+        speaker = synthesizer
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
+        isPlaying = true
+        record("Playing \(currentTitle)")
+        synthesizer.speak(utterance)
+        watchSpeech(identity)
+        publishNowPlaying()
+    }
+
+    private func watchSpeech(_ identity: UUID) {
+        speechDeadline?.cancel()
+        speechDeadline = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            self?.finished(identity, success: false)
+        }
+    }
+
+    private func begin(_ source: AVAudioPlayer) {
+        let currentTime = source.currentTime
+        guard source.play() else {
+            recordAssetError(Self.outputError)
+            releaseAudioSession()
+            publishNowPlaying()
+            return
+        }
+        if assetError == Self.outputError { assetError = nil }
         isPlaying = true
         record(currentTime == 0 ? "Playing \(currentTitle)" : "Resumed \(currentTitle)")
         startTimer()
@@ -259,10 +420,10 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
     }
 
     private func finished(_ identity: UUID, success: Bool) {
-        guard let player, playerID == identity, isPlaying, !player.isPlaying else { return }
+        guard playerID == identity, isPlaying, player?.isPlaying != true else { return }
         let wasTrack = currentKind == .track
         if success {
-            demoTime = audioStart.addingTimeInterval(duration)
+            if mode == .demo { demoTime = audioStart.addingTimeInterval(duration) }
             record("Finished \(currentTitle)")
         } else {
             recordAssetError("Playback failed for \(currentTitle).")
@@ -270,13 +431,16 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
         discardPlayer()
 
         if wasTrack {
-            // An unsuccessful song is never treated as a bulletin boundary.
+            if !success {
+                completeSession(failed: true)
+                return
+            }
             let nextIndex = trackIndex + 1
-            guard nextIndex < Self.tracks.count else {
+            guard nextIndex < sessionTracks.count else {
                 completeSession()
                 return
             }
-            pending = success ? segmentsAtBoundary(after: trackIndex) : []
+            pending = mode == .demo ? segmentsAtBoundary(after: trackIndex) : []
             trackIndex = nextIndex
             pending += [announcement(nextIndex), track(nextIndex)]
         }
@@ -297,7 +461,7 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
             } else if demoTime >= available {
                 handledNews = true
                 segments.append(AudioSegment(kind: .news, title: "Hourly news bulletin",
-                                             subtitle: "Sample bulletin · 10:00 edition", filename: "news"))
+                                             subtitle: "Sample bulletin · 10:00 edition", source: .fixture("news")))
                 record("Fresh bulletin queued at song boundary")
             } else if !loggedLateNews {
                 loggedLateNews = true
@@ -314,20 +478,21 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
                 record("Travel report expired")
             } else {
                 segments.append(AudioSegment(kind: .travel, title: "Cornwall roadworks",
-                                             subtitle: "Sample report · Lantern Cove", filename: "travel"))
+                                             subtitle: "Sample report · Lantern Cove", source: .fixture("travel")))
                 record("Fresh roadworks report queued")
             }
         }
         return segments
     }
 
-    private func completeSession() {
+    private func completeSession(failed: Bool = false) {
         discardPlayer()
+        releaseAudioSession()
         completed = true
         currentKind = .idle
-        currentTitle = "Session complete"
-        currentSubtitle = "Press Play to listen again."
-        record("Session finished")
+        currentTitle = failed ? "Playback stopped" : "Session complete"
+        currentSubtitle = failed ? "Check the audio file, then try again." : "Press Play to listen again."
+        record(failed ? "Session stopped on an audio error" : "Session finished")
         publishNowPlaying()
     }
 
@@ -337,6 +502,13 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
         player?.stop()
         player = nil
         delegate = nil
+        speaker?.delegate = nil
+        speaker?.stopSpeaking(at: .immediate)
+        speaker = nil
+        speechDelegate = nil
+        speechText = nil
+        speechDeadline?.cancel()
+        speechDeadline = nil
         stopTimer()
         isPlaying = false
         elapsed = 0
@@ -350,7 +522,7 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
 
     private func record(_ message: String) {
         if phaseLog.count == 40 { phaseLog.removeFirst() }
-        phaseLog.append(PlaybackEvent(time: demoTime, message: message))
+        phaseLog.append(PlaybackEvent(time: mode == .demo ? demoTime : .now, message: message))
     }
 
     private func startTimer() {
@@ -386,12 +558,26 @@ private final class AudioCompletion: NSObject, AVAudioPlayerDelegate {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback)
             try session.setActive(true)
+            hasActiveAudioSession = true
+            if assetError == Self.sessionError { assetError = nil }
         } catch {
-            recordAssetError("Audio session unavailable. Press Play to try again.")
+            recordAssetError(Self.sessionError)
             return false
         }
         #endif
         return true
+    }
+
+    private func releaseAudioSession() {
+        #if os(iOS)
+        guard hasActiveAudioSession else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            hasActiveAudioSession = false
+        } catch {
+            record("Could not release the audio session.")
+        }
+        #endif
     }
 
     private func publishNowPlaying() {
