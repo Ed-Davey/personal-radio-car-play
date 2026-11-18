@@ -1,0 +1,96 @@
+name: Open Ed-Codex feature PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      head:
+        description: Tested feature branch (feature/...)
+        required: true
+        type: string
+      title:
+        description: Pull request title
+        required: true
+        type: string
+      summary:
+        description: What changed and how it was tested
+        required: true
+        type: string
+
+permissions: {}
+concurrency: ed-codex-publisher
+
+jobs:
+  publish:
+    if: ${{ github.ref == 'refs/heads/dev' && github.actor == github.repository_owner }}
+    runs-on: ubuntu-latest
+    environment: ed-codex-publisher
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Check the feature was integrated into V1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ inputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_BRANCH" != feature/* ]]; then
+            echo 'Choose the tested feature/... branch, rather than V1.' >&2
+            exit 1
+          fi
+          git check-ref-format "refs/heads/$HEAD_BRANCH"
+          encoded_branch=$(jq -nr --arg branch "$HEAD_BRANCH" '$branch | split("/") | map(@uri) | join("/")')
+          endpoint="repos/$GITHUB_REPOSITORY"
+          feature=$(gh api "$endpoint/git/ref/heads/$encoded_branch" --jq '.object.sha')
+          integration=$(gh api "$endpoint/git/ref/heads/V1" --jq '.object.sha')
+          if [[ ! "$feature" =~ ^[0-9a-f]{40}$ || ! "$integration" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Could not resolve the feature and V1 branches.' >&2
+            exit 1
+          fi
+          merge_base=$(gh api "$endpoint/compare/$feature...$integration" --jq '.merge_base_commit.sha')
+          if [[ "$merge_base" != "$feature" ]]; then
+            echo 'Merge this feature commit into V1, test the integrated build, and push V1 first.' >&2
+            exit 1
+          fi
+
+      - name: Mint a repository-scoped app token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.ED_CODEX_CLIENT_ID }}
+          private-key: ${{ secrets.ED_CODEX_PRIVATE_KEY }}
+          permission-pull-requests: write
+
+      - name: Open or find the bot-authored draft
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          CONFIGURED_BOT: ${{ vars.ED_CODEX_BOT_LOGIN }}
+          HEAD_BRANCH: ${{ inputs.head }}
+          PR_TITLE: ${{ inputs.title }}
+          PR_SUMMARY: ${{ inputs.summary }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bot="${APP_SLUG}[bot]"
+          if [[ "$bot" != "$CONFIGURED_BOT" ]]; then
+            echo 'ED_CODEX_BOT_LOGIN does not match the installed GitHub App.' >&2
+            exit 1
+          fi
+          endpoint="repos/$GITHUB_REPOSITORY/pulls"
+          existing=$(gh api --method GET "$endpoint" \
+            -f state=open -f base=dev -f head="$GITHUB_REPOSITORY_OWNER:$HEAD_BRANCH" \
+            --jq '.[0] // empty')
+          if [[ -n "$existing" ]]; then
+            if [[ "$(jq -r '.user.login' <<< "$existing")" != "$bot" ]]; then
+              echo 'An open PR for this branch already belongs to another author.' >&2
+              exit 1
+            fi
+            url=$(jq -er '.html_url' <<< "$existing")
+          else
+            url=$(gh api --method POST "$endpoint" \
+              -f base=dev -f head="$HEAD_BRANCH" -f title="$PR_TITLE" \
+              -f body="$PR_SUMMARY" -F draft=true --jq '.html_url')
+          fi
+          printf 'Feature PR: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
