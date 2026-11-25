@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,6 +10,7 @@ private let mint = Color(red: 0.68, green: 0.87, blue: 0.79)
 
 struct PrototypeView: View {
     @Bindable var playback: PlaybackModel
+    let spotifyPlaylists: SpotifyPlaylistLibrary
     @State private var importingFiles = false
     @State private var playlistMessage: String?
 
@@ -17,7 +19,13 @@ struct PrototypeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
-                    if geometry.size.width >= 900 {
+                    if playback.mode == .spotify {
+                        card("Spotify playlists", symbol: "music.note.list") {
+                            sourcePicker
+                            Divider()
+                            SpotifyPlaylistsView(library: spotifyPlaylists)
+                        }
+                    } else if geometry.size.width >= 900 {
                         HStack(alignment: .top, spacing: 18) {
                             VStack(spacing: 18) {
                                 player
@@ -70,7 +78,7 @@ struct PrototypeView: View {
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 10)
-            Label(playback.mode == .demo ? "Sample demo" : "Private pilot", systemImage: "internaldrive")
+            Label(playback.mode == .pilot ? "Private pilot" : playback.mode.rawValue, systemImage: "internaldrive")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(muted)
                 .padding(.horizontal, 11)
@@ -220,12 +228,7 @@ struct PrototypeView: View {
 
     private var controls: some View {
         card("Session controls", symbol: "slider.horizontal.3") {
-            Picker("Source", selection: Binding(get: { playback.mode }, set: { playback.selectMode($0) })) {
-                ForEach(ListeningMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
+            sourcePicker
             Divider()
             if playback.mode == .demo {
                 Picker("Scenario", selection: Binding(get: { playback.scenario }, set: { playback.selectScenario($0) })) {
@@ -258,6 +261,15 @@ struct PrototypeView: View {
                 playlistControls
             }
         }
+    }
+
+    private var sourcePicker: some View {
+        Picker("Source", selection: Binding(get: { playback.mode }, set: { playback.selectMode($0) })) {
+            ForEach(ListeningMode.allCases) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.menu)
     }
 
     @ViewBuilder
@@ -440,5 +452,222 @@ struct PrototypeView: View {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let whole = Int(seconds)
         return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+}
+
+private struct SpotifyPlaylistsView: View {
+    let library: SpotifyPlaylistLibrary
+
+    @Environment(\.openURL) private var openURL
+    @Environment(\.webAuthenticationSession) private var authentication
+    @AppStorage("personalRadio.spotify.clientID") private var clientID = ""
+    @State private var name = ""
+    @State private var link = ""
+    @State private var message: String?
+    @State private var token: SpotifyAccessToken?
+    @State private var accountPlaylists: [SpotifyPlaylist] = []
+    @State private var nextOffset: Int?
+    @State private var accountTask: Task<Void, Never>?
+    @State private var api = SpotifyWebAPI()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Choose a playlist while parked. Spotify handles playback and CarPlay controls.")
+                .foregroundStyle(muted)
+                .font(.subheadline)
+
+            TextField("Playlist name (optional)", text: $name)
+            TextField("Spotify playlist link or URI", text: $link)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                #endif
+            Button("Save playlist", action: saveLink)
+                .buttonStyle(.borderedProminent)
+                .disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if let message {
+                Text(message)
+                    .foregroundStyle(muted)
+                    .font(.footnote)
+            }
+
+            if !library.playlists.isEmpty {
+                Divider()
+                Text("Saved playlists")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(library.playlists) { playlist in
+                    playlistRow(playlist, isSaved: true)
+                }
+            }
+
+            Divider()
+            if token == nil {
+                DisclosureGroup("Connect your Spotify library") {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Enter the public Client ID from your Spotify developer app. Connecting gives Personal Radio read-only access to your playlists.")
+                            .font(.footnote)
+                            .foregroundStyle(muted)
+                        TextField("Spotify developer Client ID", text: $clientID)
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                        Button("Connect Spotify", action: connectAccount)
+                            .buttonStyle(.bordered)
+                            .disabled(accountTask != nil || clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .padding(.top, 6)
+                }
+            } else {
+                connectedLibrary
+            }
+            if accountTask != nil {
+                ProgressView("Loading Spotify playlists")
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .onDisappear {
+            accountTask?.cancel()
+            clearAccount()
+        }
+    }
+
+    private var connectedLibrary: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("From Spotify")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            HStack {
+                Button("Refresh playlists") { loadPage(append: false) }
+                Button("Disconnect") { clearAccount() }
+            }
+            .buttonStyle(.bordered)
+            .disabled(accountTask != nil)
+
+            if accountPlaylists.isEmpty, accountTask == nil {
+                Text("Spotify has no playlists to show.")
+                    .foregroundStyle(muted)
+            }
+            ForEach(accountPlaylists) { playlist in
+                playlistRow(playlist, isSaved: false)
+            }
+            if nextOffset != nil {
+                Button("Load more playlists") { loadPage(append: true) }
+                    .buttonStyle(.bordered)
+                    .disabled(accountTask != nil)
+            }
+        }
+    }
+
+    private func playlistRow(_ playlist: SpotifyPlaylist, isSaved: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(playlist.name)
+            HStack {
+                Button("Open in Spotify") {
+                    message = nil
+                    openURL(playlist.url) { accepted in
+                        if !accepted {
+                            message = "The playlist could not open. Check that Spotify or a browser is available."
+                        }
+                    }
+                }
+                .accessibilityLabel("Open \(playlist.name) in Spotify")
+
+                if isSaved {
+                    Button("Remove", role: .destructive) {
+                        library.remove(playlist)
+                        message = "Playlist removed from Personal Radio."
+                    }
+                    .accessibilityLabel("Remove saved playlist \(playlist.name)")
+                } else {
+                    Button("Save playlist") { save(name: playlist.name, link: playlist.url.absoluteString) }
+                        .accessibilityLabel("Save playlist \(playlist.name)")
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func saveLink() {
+        if save(name: name, link: link) {
+            name = ""
+            link = ""
+        }
+    }
+
+    @discardableResult
+    private func save(name: String, link: String) -> Bool {
+        do {
+            let saved = try library.save(name: name, link: link)
+            message = "Saved \(saved.name)."
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
+        }
+    }
+
+    private func connectAccount() {
+        startAccountWork {
+            let request = try SpotifyAuthorizationRequest(clientID: clientID)
+            let callback = try await authentication.authenticate(
+                using: request.authorizeURL,
+                callbackURLScheme: SpotifyAuthorizationRequest.callbackScheme,
+                preferredBrowserSession: .ephemeral
+            )
+            try Task.checkCancellation()
+            let authorized = try await api.exchange(request, callback: callback)
+            try Task.checkCancellation()
+            let page = try await api.playlists(using: authorized, offset: 0)
+            try Task.checkCancellation()
+            token = authorized
+            showPage(page, append: false)
+        }
+    }
+
+    private func loadPage(append: Bool) {
+        guard let token, let offset = append ? nextOffset : 0 else { return }
+        startAccountWork {
+            let page = try await api.playlists(using: token, offset: offset)
+            try Task.checkCancellation()
+            showPage(page, append: append)
+        }
+    }
+
+    private func startAccountWork(_ operation: @escaping @MainActor () async throws -> Void) {
+        guard accountTask == nil else { return }
+        message = nil
+        accountTask = Task { @MainActor in
+            defer { accountTask = nil }
+            do {
+                try await operation()
+            } catch is CancellationError {
+                return
+            } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+                return
+            } catch let error as SpotifyAccountError {
+                if error == .expiredToken { clearAccount() }
+                message = error.localizedDescription
+            } catch {
+                message = "Spotify sign-in could not finish. Try connecting again."
+            }
+        }
+    }
+
+    private func showPage(_ page: SpotifyPlaylistPage, append: Bool) {
+        if !append { accountPlaylists = [] }
+        var seen = Set(accountPlaylists.map(\.id))
+        accountPlaylists += page.items.filter { seen.insert($0.id).inserted }
+        nextOffset = page.nextOffset
+    }
+
+    private func clearAccount() {
+        token = nil
+        accountPlaylists = []
+        nextOffset = nil
+        message = nil
     }
 }

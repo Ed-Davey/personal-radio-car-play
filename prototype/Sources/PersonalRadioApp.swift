@@ -3,10 +3,11 @@ import SwiftUI
 @main
 struct PersonalRadioApp: App {
     @State private var playback = PlaybackModel(mode: .pilot)
+    @State private var spotifyPlaylists = SpotifyPlaylistLibrary()
 
     var body: some Scene {
         WindowGroup {
-            PrototypeView(playback: playback)
+            PrototypeView(playback: playback, spotifyPlaylists: spotifyPlaylists)
                 .preferredColorScheme(.dark)
                 #if os(macOS)
                 .frame(minWidth: 710, minHeight: 630)
