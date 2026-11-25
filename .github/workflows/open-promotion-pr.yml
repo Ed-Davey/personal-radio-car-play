@@ -62,7 +62,7 @@ jobs:
           private-key: ${{ secrets.ED_CODEX_PRIVATE_KEY }}
           permission-pull-requests: write
 
-      - name: Open or find the bot-authored draft
+      - name: Open or find the bot-authored PR
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
@@ -91,6 +91,6 @@ jobs:
           else
             url=$(gh api --method POST "$endpoint" \
               -f base=dev -f head="$HEAD_BRANCH" -f title="$PR_TITLE" \
-              -f body="$PR_SUMMARY" -F draft=true --jq '.html_url')
+              -f body="$PR_SUMMARY" -F draft=false --jq '.html_url')
           fi
           printf 'Feature PR: %s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
