@@ -38,6 +38,85 @@ struct SpotifyAccountTests {
         }
     }
 
+    @Test("Playback consent adds only the two player scopes")
+    func playbackAuthorization() throws {
+        let request = try SpotifyAuthorizationRequest(clientID: clientID, enablePlayback: true)
+        let scopes = try #require(try fields(in: request.authorizeURL)["scope"])
+        #expect(Set(scopes.split(separator: " ").map(String.init)) == [
+            "playlist-read-private", "playlist-read-collaborative",
+            "user-read-playback-state", "user-modify-playback-state"
+        ])
+    }
+
+    @Test("Play sends a playlist context and pause targets the active device")
+    func playbackCommands() async throws {
+        let playlist = try #require(SpotifyPlaylist(id: firstID, name: "Test playlist"))
+        let api = SpotifyWebAPI { http in
+            if http.url?.host() == "accounts.spotify.com" { return try response(to: http, json: tokenJSON) }
+            #expect(http.url?.host() == "api.spotify.com")
+            #expect(http.url?.query() == nil)
+            #expect(http.httpMethod == "PUT")
+            #expect(http.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
+            switch http.url?.path() {
+            case "/v1/me/player/play":
+                let body = try #require(http.httpBody)
+                #expect(try JSONDecoder().decode([String: String].self, from: body) == [
+                    "context_uri": "spotify:playlist:\(firstID)"
+                ])
+                #expect(http.value(forHTTPHeaderField: "Content-Type") == "application/json")
+            case "/v1/me/player/pause":
+                #expect(http.httpBody == nil)
+            default:
+                Issue.record("Unexpected Spotify player endpoint")
+            }
+            return try response(to: http, status: 204, json: "")
+        }
+        let request = try SpotifyAuthorizationRequest(clientID: clientID, enablePlayback: true)
+        let token = try await api.exchange(request, callback: callback(for: request, suffix: "&code=fixture"))
+        try await api.play(playlist, using: token)
+        try await api.pause(using: token)
+    }
+
+    @Test("Playback state includes track details and Spotify artwork")
+    func playbackMetadata() async throws {
+        let api = SpotifyWebAPI { http in
+            if http.url?.host() == "accounts.spotify.com" { return try response(to: http, json: tokenJSON) }
+            #expect(http.url?.absoluteString == "https://api.spotify.com/v1/me/player")
+            #expect(http.httpMethod == "GET")
+            return try response(to: http, json: #"""
+                {"is_playing":true,"device":{"name":"Test iPhone"},"item":{
+                    "name":"Fixture song","artists":[{"name":"Fixture artist"}],
+                    "album":{"images":[{"url":"https://evil.example/art.jpg"},{"url":"https://i.scdn.co/image/art"}]},
+                    "external_urls":{"spotify":"https://open.spotify.com/track/fixture"}
+                }}
+                """#)
+        }
+        let request = try SpotifyAuthorizationRequest(clientID: clientID, enablePlayback: true)
+        let token = try await api.exchange(request, callback: callback(for: request, suffix: "&code=fixture"))
+        let state = try #require(try await api.currentPlayback(using: token))
+        #expect(state.isPlaying)
+        #expect(state.deviceName == "Test iPhone")
+        #expect(state.title == "Fixture song")
+        #expect(state.creator == "Fixture artist")
+        #expect(state.artworkURL?.absoluteString == "https://i.scdn.co/image/art")
+        #expect(state.itemURL?.host() == "open.spotify.com")
+    }
+
+    @Test("An idle device has no state, and an unavailable destination gives a recovery message")
+    func unavailablePlayer() async throws {
+        let api = SpotifyWebAPI { http in
+            if http.url?.host() == "accounts.spotify.com" { return try response(to: http, json: tokenJSON) }
+            return try response(to: http, status: http.httpMethod == "GET" ? 204 : 404, json: "")
+        }
+        let request = try SpotifyAuthorizationRequest(clientID: clientID, enablePlayback: true)
+        let token = try await api.exchange(request, callback: callback(for: request, suffix: "&code=fixture"))
+        #expect(try await api.currentPlayback(using: token) == nil)
+        let playlist = try #require(SpotifyPlaylist(id: firstID, name: "Test playlist"))
+        await #expect(throws: SpotifyAccountError.noPlaybackDevice) {
+            try await api.play(playlist, using: token)
+        }
+    }
+
     @Test("The token exchange sends the original S256 verifier and correctly encodes the code")
     func tokenExchange() async throws {
         let request = try SpotifyAuthorizationRequest(clientID: clientID)

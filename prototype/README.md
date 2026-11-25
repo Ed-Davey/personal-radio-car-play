@@ -10,7 +10,7 @@ Run `bash build-mac.sh` from this folder to build the app using the Mac Command 
 
 ## Use Spotify playlists
 
-Choose **Spotify** in **Source**. Save a playlist link or connect your Spotify library, then use **Open in Spotify** to play through Spotify. [Spotify setup instructions](Spotify-Setup.md)
+Choose **Spotify** in **Source**. Save a playlist link or connect your library. Enable playback control to start a playlist on your active Spotify device from Personal Radio, or use **Open in Spotify** to open the link directly. [Spotify setup instructions](Spotify-Setup.md)
 
 ## Import your music
 

@@ -460,11 +460,15 @@ private struct SpotifyPlaylistsView: View {
 
     @Environment(\.openURL) private var openURL
     @Environment(\.webAuthenticationSession) private var authentication
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("personalRadio.spotify.clientID") private var clientID = ""
     @State private var name = ""
     @State private var link = ""
     @State private var message: String?
     @State private var token: SpotifyAccessToken?
+    @State private var enablePlayback = false
+    @State private var playbackAuthorized = false
+    @State private var currentPlayback: SpotifyPlayback?
     @State private var accountPlaylists: [SpotifyPlaylist] = []
     @State private var nextOffset: Int?
     @State private var accountTask: Task<Void, Never>?
@@ -491,6 +495,9 @@ private struct SpotifyPlaylistsView: View {
                     .foregroundStyle(muted)
                     .font(.footnote)
             }
+            if playbackAuthorized {
+                spotifyPlayer
+            }
 
             if !library.playlists.isEmpty {
                 Divider()
@@ -506,7 +513,7 @@ private struct SpotifyPlaylistsView: View {
             if token == nil {
                 DisclosureGroup("Connect your Spotify library") {
                     VStack(alignment: .leading, spacing: 9) {
-                        Text("Enter the public Client ID from your Spotify developer app. Connecting gives Personal Radio read-only access to your playlists.")
+                        Text("Enter the public Client ID from your Spotify developer app. Connecting lets Personal Radio browse your playlists.")
                             .font(.footnote)
                             .foregroundStyle(muted)
                         TextField("Spotify developer Client ID", text: $clientID)
@@ -514,6 +521,13 @@ private struct SpotifyPlaylistsView: View {
                             #if os(iOS)
                             .textInputAutocapitalization(.never)
                             #endif
+                        Toggle("Allow Spotify playback control", isOn: $enablePlayback)
+                            .disabled(accountTask != nil)
+                        if enablePlayback {
+                            Text("Requires Premium and an active Spotify device. Personal Radio sends play and pause commands to that device.")
+                                .font(.footnote)
+                                .foregroundStyle(muted)
+                        }
                         Button("Connect Spotify", action: connectAccount)
                             .buttonStyle(.bordered)
                             .disabled(accountTask != nil || clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -524,13 +538,57 @@ private struct SpotifyPlaylistsView: View {
                 connectedLibrary
             }
             if accountTask != nil {
-                ProgressView("Loading Spotify playlists")
+                ProgressView("Contacting Spotify")
             }
         }
         .textFieldStyle(.roundedBorder)
+        .task(id: playbackAuthorized && scenePhase == .active) {
+            guard playbackAuthorized, scenePhase == .active, let token else { return }
+            await observePlayback(using: token)
+        }
         .onDisappear {
             accountTask?.cancel()
             clearAccount()
+        }
+    }
+
+    private var spotifyPlayer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Spotify playback")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            if let state = currentPlayback {
+                HStack(alignment: .center, spacing: 12) {
+                    if let image = state.artworkURL {
+                        AsyncImage(url: image) { artwork in
+                            artwork.resizable().scaledToFit()
+                        } placeholder: {
+                            Color.clear
+                        }
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let title = state.title, let url = state.itemURL {
+                            Link(title, destination: url)
+                        } else if let title = state.title {
+                            Text(title)
+                        }
+                        if let artist = state.creator {
+                            Text(artist).foregroundStyle(muted)
+                        }
+                        Text(state.isPlaying ? "Playing on \(state.deviceName ?? "Spotify")" : "Spotify is paused")
+                            .font(.footnote)
+                    }
+                }
+                Button("Pause Spotify") { pauseSpotify() }
+                    .buttonStyle(.bordered)
+                    .disabled(accountTask != nil || !state.isPlaying)
+            } else {
+                Text("Open Spotify on the device you want to hear, then choose Play below.")
+                    .foregroundStyle(muted)
+                    .font(.footnote)
+            }
         }
     }
 
@@ -564,6 +622,12 @@ private struct SpotifyPlaylistsView: View {
     private func playlistRow(_ playlist: SpotifyPlaylist, isSaved: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(playlist.name)
+            if playbackAuthorized {
+                Button("Play playlist") { playSpotify(playlist) }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Play \(playlist.name) on Spotify")
+                    .disabled(accountTask != nil)
+            }
             HStack {
                 Button("Open in Spotify") {
                     message = nil
@@ -612,8 +676,9 @@ private struct SpotifyPlaylistsView: View {
     }
 
     private func connectAccount() {
+        let wantsPlayback = enablePlayback
         startAccountWork {
-            let request = try SpotifyAuthorizationRequest(clientID: clientID)
+            let request = try SpotifyAuthorizationRequest(clientID: clientID, enablePlayback: wantsPlayback)
             let callback = try await authentication.authenticate(
                 using: request.authorizeURL,
                 callbackURLScheme: SpotifyAuthorizationRequest.callbackScheme,
@@ -625,7 +690,55 @@ private struct SpotifyPlaylistsView: View {
             let page = try await api.playlists(using: authorized, offset: 0)
             try Task.checkCancellation()
             token = authorized
+            playbackAuthorized = wantsPlayback
             showPage(page, append: false)
+        }
+    }
+
+    private func playSpotify(_ playlist: SpotifyPlaylist) {
+        guard playbackAuthorized, let token else { return }
+        startAccountWork {
+            try await api.play(playlist, using: token)
+            try Task.checkCancellation()
+            message = "Spotify accepted the play request for \(playlist.name)."
+        }
+    }
+
+    private func pauseSpotify() {
+        guard playbackAuthorized, let token else { return }
+        startAccountWork {
+            try await api.pause(using: token)
+            try Task.checkCancellation()
+            message = "Spotify accepted the pause request."
+        }
+    }
+
+    private func observePlayback(using token: SpotifyAccessToken) async {
+        while !Task.isCancelled {
+            var interval = Duration.seconds(5)
+            if accountTask == nil {
+                do {
+                    let state = try await api.currentPlayback(using: token)
+                    try Task.checkCancellation()
+                    if accountTask == nil { currentPlayback = state }
+                } catch SpotifyAccountError.expiredToken {
+                    if !Task.isCancelled, accountTask == nil {
+                        clearAccount()
+                        message = SpotifyAccountError.expiredToken.localizedDescription
+                        return
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    if !Task.isCancelled, accountTask == nil { currentPlayback = nil }
+                    interval = .seconds(60)
+                }
+            }
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
         }
     }
 
@@ -667,6 +780,8 @@ private struct SpotifyPlaylistsView: View {
 
     private func clearAccount() {
         token = nil
+        playbackAuthorized = false
+        currentPlayback = nil
         accountPlaylists = []
         nextOffset = nil
         message = nil
