@@ -1,0 +1,58 @@
+name: Prototype CI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [V1]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prototype-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS prototype build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build and verify the signed app
+        run: |
+          xcrun swiftc -version
+          bash prototype/build-mac.sh
+          codesign --verify --strict 'prototype/build/Personal Radio Prototype.app'
+
+      - name: Test the bundled audio
+        run: python3 prototype/check-bundled-audio.py 'prototype/build/Personal Radio Prototype.app'
+
+  ios:
+    name: iOS Simulator build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build the app for iOS Simulator
+        run: |
+          xcodebuild -version
+          xcodebuild \
+            -project prototype/PersonalRadioPrototype.xcodeproj \
+            -scheme PersonalRadioPrototype \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/personal-radio-ios" \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Test bundled audio and background playback configuration
+        run: |
+          app="$RUNNER_TEMP/personal-radio-ios/Build/Products/Debug-iphonesimulator/PersonalRadioPrototype.app"
+          python3 prototype/check-bundled-audio.py --ios "$app"
