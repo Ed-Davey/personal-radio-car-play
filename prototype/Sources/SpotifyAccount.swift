@@ -27,7 +27,7 @@ struct SpotifyAuthorizationRequest: Sendable {
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: Self.redirectURI),
-            URLQueryItem(name: "scope", value: "playlist-read-private"),
+            URLQueryItem(name: "scope", value: "playlist-read-private playlist-read-collaborative"),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "state", value: state)
