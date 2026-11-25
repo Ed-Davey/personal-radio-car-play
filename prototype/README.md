@@ -8,6 +8,10 @@ Double-click **Personal Radio Prototype.app** inside `build`. Press Space to pla
 
 Run `bash build-mac.sh` from this folder to build the app using the Mac Command Line Tools and Swift 6. The script generates a local bundle for macOS 14 or later and signs it ad hoc.
 
+## Use Spotify playlists
+
+Choose **Spotify** in **Source**. Save a playlist link or connect your Spotify library, then use **Open in Spotify** to play through Spotify. [Spotify setup instructions](Spotify-Setup.md)
+
 ## Import your music
 
 1. Select **My playlist** and choose **Import music files**. Select DRM-free MP3, M4A, WAV or AIFF files that you can use.

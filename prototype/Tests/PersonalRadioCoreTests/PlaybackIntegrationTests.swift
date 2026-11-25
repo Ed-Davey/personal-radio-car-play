@@ -5,6 +5,24 @@ import Testing
 
 @MainActor
 struct PlaybackIntegrationTests {
+    @Test("Selecting Spotify stops local playback and leaves it stopped")
+    func spotifyModeReleasesLocalPlayback() throws {
+        let harness = try PlaybackHarness()
+        defer { harness.cleanUp() }
+        let model = harness.model
+        model.togglePlayback()
+        let demoPlayer = try #require(harness.players.current)
+        #expect(demoPlayer.isPlaying)
+
+        model.selectMode(.spotify)
+        #expect(!demoPlayer.isPlaying)
+        #expect(model.currentKind == .idle)
+        #expect(!model.canPlay)
+        #expect(model.upcoming.isEmpty)
+        model.togglePlayback()
+        #expect(!model.isPlaying)
+    }
+
     @Test("Natural song endings play the reports before the next introduction")
     func naturalSongBoundaries() async throws {
         let harness = try PlaybackHarness()
