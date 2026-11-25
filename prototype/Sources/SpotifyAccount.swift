@@ -14,7 +14,7 @@ struct SpotifyAuthorizationRequest: Sendable {
     fileprivate let verifier: String
     private let state: String
 
-    init(clientID: String) throws {
+    init(clientID: String, enablePlayback: Bool = false) throws {
         let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clientID.isEmpty, clientID.unicodeScalars.allSatisfy(Self.unreserved.contains) else {
             throw SpotifyAccountError.invalidClientID
@@ -23,11 +23,15 @@ struct SpotifyAuthorizationRequest: Sendable {
         verifier = try Self.randomValue()
         state = try Self.randomValue()
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
+        var scopes = ["playlist-read-private", "playlist-read-collaborative"]
+        if enablePlayback {
+            scopes += ["user-read-playback-state", "user-modify-playback-state"]
+        }
         authorizeURL = URL(string: "https://accounts.spotify.com/authorize")!.appending(queryItems: [
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: Self.redirectURI),
-            URLQueryItem(name: "scope", value: "playlist-read-private playlist-read-collaborative"),
+            URLQueryItem(name: "scope", value: scopes.joined(separator: " ")),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "state", value: state)
@@ -82,6 +86,15 @@ struct SpotifyPlaylistPage: Equatable, Sendable {
     let nextOffset: Int?
 }
 
+struct SpotifyPlayback: Equatable, Sendable {
+    let isPlaying: Bool
+    let deviceName: String?
+    let title: String?
+    let creator: String?
+    let artworkURL: URL?
+    let itemURL: URL?
+}
+
 enum SpotifyAccountError: LocalizedError, Equatable, Sendable {
     case invalidClientID
     case randomnessUnavailable
@@ -95,13 +108,15 @@ enum SpotifyAccountError: LocalizedError, Equatable, Sendable {
     case networkUnavailable
     case invalidResponse
     case serviceUnavailable
+    case noPlaybackDevice
+    case playbackForbidden
 
     var errorDescription: String? {
         switch self {
         case .invalidClientID: "Spotify sign-in needs a Spotify app client ID."
         case .randomnessUnavailable: "Could not start a secure Spotify sign-in. Try again."
         case .invalidCallback: "Could not verify the Spotify sign-in. Start again."
-        case .authorizationDenied: "Spotify playlist access was declined."
+        case .authorizationDenied: "Spotify access was declined."
         case .authorizationFailed: "Spotify could not complete sign-in. Try again."
         case .expiredToken: "Your Spotify session has expired. Connect again."
         case .accessForbidden: "Spotify denied access. Check that your account can use this Spotify app."
@@ -110,6 +125,8 @@ enum SpotifyAccountError: LocalizedError, Equatable, Sendable {
         case .networkUnavailable: "Could not reach Spotify. Check your connection and try again."
         case .invalidResponse: "Spotify returned a response Personal Radio could not read."
         case .serviceUnavailable: "Spotify could not complete the request. Try again."
+        case .noPlaybackDevice: "Open Spotify and play something on your chosen device, then return here and try again."
+        case .playbackForbidden: "Spotify declined playback control. Check that you have Premium and your device supports Spotify Connect control."
         }
     }
 }
@@ -117,6 +134,7 @@ enum SpotifyAccountError: LocalizedError, Equatable, Sendable {
 actor SpotifyWebAPI {
     private static let tokenURL = URL(string: "https://accounts.spotify.com/api/token")!
     private static let playlistsURL = URL(string: "https://api.spotify.com/v1/me/playlists")!
+    private static let playerURL = URL(string: "https://api.spotify.com/v1/me/player")!
     private static let pageSize = 50
     private static let maximumOffset = 100_000
 
@@ -187,7 +205,55 @@ actor SpotifyWebAPI {
         return SpotifyPlaylistPage(items: items, nextOffset: hasNext ? candidate : nil)
     }
 
+    func play(_ playlist: SpotifyPlaylist, using token: SpotifyAccessToken) async throws {
+        var request = try playerRequest(using: token, endpoint: "play")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["context_uri": "spotify:playlist:\(playlist.id)"])
+        try await sendPlaybackCommand(request)
+    }
+
+    func pause(using token: SpotifyAccessToken) async throws {
+        try await sendPlaybackCommand(playerRequest(using: token, endpoint: "pause"))
+    }
+
+    func currentPlayback(using token: SpotifyAccessToken) async throws -> SpotifyPlayback? {
+        let request = try playerRequest(using: token)
+        let (data, status) = try await send(request)
+        switch status {
+        case 204: return nil
+        case 200:
+            guard let state = try? JSONDecoder().decode(PlayerResponse.self, from: data) else {
+                throw SpotifyAccountError.invalidResponse
+            }
+            return state.playback
+        default: throw Self.error(for: status, isPlayback: true)
+        }
+    }
+
+    private func playerRequest(using token: SpotifyAccessToken, endpoint: String? = nil) throws -> URLRequest {
+        guard Date.now < token.expiresAt else { throw SpotifyAccountError.expiredToken }
+        let url = endpoint.map { Self.playerURL.appending(path: $0) } ?? Self.playerURL
+        var request = URLRequest(url: url)
+        request.httpMethod = endpoint == nil ? "GET" : "PUT"
+        request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func sendPlaybackCommand(_ request: URLRequest) async throws {
+        let (_, status) = try await send(request)
+        guard status == 204 else { throw Self.error(for: status, isPlayback: true) }
+    }
+
     private func response<Response: Decodable>(for request: URLRequest, isExchange: Bool = false) async throws -> Response {
+        let (data, status) = try await send(request)
+        guard status == 200 else { throw Self.error(for: status, isExchange: isExchange) }
+        guard let result = try? JSONDecoder().decode(Response.self, from: data) else {
+            throw SpotifyAccountError.invalidResponse
+        }
+        return result
+    }
+
+    private func send(_ request: URLRequest) async throws -> (Data, Int) {
         let data: Data
         let response: URLResponse
         do {
@@ -204,18 +270,18 @@ actor SpotifyWebAPI {
         guard let http = response as? HTTPURLResponse, http.url == request.url else {
             throw SpotifyAccountError.invalidResponse
         }
-        switch http.statusCode {
-        case 200:
-            guard let result = try? JSONDecoder().decode(Response.self, from: data) else {
-                throw SpotifyAccountError.invalidResponse
-            }
-            return result
-        case 300...399: throw SpotifyAccountError.invalidResponse
-        case 400 where isExchange: throw SpotifyAccountError.authorizationFailed
-        case 401: throw isExchange ? SpotifyAccountError.authorizationFailed : .expiredToken
-        case 403: throw SpotifyAccountError.accessForbidden
-        case 429: throw SpotifyAccountError.rateLimited
-        default: throw SpotifyAccountError.serviceUnavailable
+        return (data, http.statusCode)
+    }
+
+    private static func error(for status: Int, isExchange: Bool = false, isPlayback: Bool = false) -> SpotifyAccountError {
+        switch status {
+        case 300...399: .invalidResponse
+        case 400 where isExchange: .authorizationFailed
+        case 401: isExchange ? .authorizationFailed : .expiredToken
+        case 403: isPlayback ? .playbackForbidden : .accessForbidden
+        case 404 where isPlayback: .noPlaybackDevice
+        case 429: .rateLimited
+        default: .serviceUnavailable
         }
     }
 
@@ -254,6 +320,42 @@ actor SpotifyWebAPI {
 
         let items: [Item?]
         let next: String?
+    }
+
+    private struct PlayerResponse: Decodable {
+        struct Device: Decodable { let name: String? }
+        struct Creator: Decodable { let name: String? }
+        struct Image: Decodable { let url: String? }
+        struct Album: Decodable { let images: [Image]? }
+        struct Item: Decodable {
+            let name: String?
+            let artists: [Creator]?
+            let show: Creator?
+            let album: Album?
+            let images: [Image]?
+            let external_urls: [String: String]?
+        }
+
+        let is_playing: Bool
+        let device: Device?
+        let item: Item?
+
+        var playback: SpotifyPlayback {
+            let artistNames = item?.artists?.compactMap(\.name).joined(separator: ", ")
+            let images = item?.album?.images ?? item?.images ?? []
+            let artwork = images.lazy.compactMap { image -> URL? in
+                guard let raw = image.url, let url = URL(string: raw), url.scheme == "https",
+                      let host = url.host(), host == "i.scdn.co" || host.hasSuffix(".spotifycdn.com"),
+                      url.user == nil, url.password == nil else { return nil }
+                return url
+            }.first
+            let itemURL = item?.external_urls?["spotify"].flatMap { raw -> URL? in
+                guard raw.hasPrefix("https://open.spotify.com/") else { return nil }
+                return URL(string: raw)
+            }
+            return SpotifyPlayback(isPlaying: is_playing, deviceName: device?.name, title: item?.name,
+                                   creator: artistNames ?? item?.show?.name, artworkURL: artwork, itemURL: itemURL)
+        }
     }
 }
 
