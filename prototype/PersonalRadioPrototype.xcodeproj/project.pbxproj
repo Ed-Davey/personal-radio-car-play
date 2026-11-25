@@ -10,6 +10,8 @@
 		D61000000000000000000002 /* PrototypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000002 /* PrototypeView.swift */; };
 		D61000000000000000000003 /* PlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000003 /* PlaybackModel.swift */; };
 		D61000000000000000000005 /* LocalPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000007 /* LocalPlaylist.swift */; };
+		D61000000000000000000006 /* SpotifyPlaylists.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000008 /* SpotifyPlaylists.swift */; };
+		D61000000000000000000007 /* SpotifyAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000009 /* SpotifyAccount.swift */; };
 		D61000000000000000000004 /* Audio in Resources */ = {isa = PBXBuildFile; fileRef = D62000000000000000000004 /* Audio */; };
 /* End PBXBuildFile section */
 
@@ -18,6 +20,8 @@
 		D62000000000000000000002 /* PrototypeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrototypeView.swift; sourceTree = "<group>"; };
 		D62000000000000000000003 /* PlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackModel.swift; sourceTree = "<group>"; };
 		D62000000000000000000007 /* LocalPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPlaylist.swift; sourceTree = "<group>"; };
+		D62000000000000000000008 /* SpotifyPlaylists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyPlaylists.swift; sourceTree = "<group>"; };
+		D62000000000000000000009 /* SpotifyAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAccount.swift; sourceTree = "<group>"; };
 		D62000000000000000000004 /* Audio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Audio; sourceTree = "<group>"; };
 		D62000000000000000000005 /* Info-iOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
 		D62000000000000000000006 /* PersonalRadioPrototype.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PersonalRadioPrototype.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -50,6 +54,8 @@
 				D62000000000000000000002 /* PrototypeView.swift */,
 				D62000000000000000000003 /* PlaybackModel.swift */,
 				D62000000000000000000007 /* LocalPlaylist.swift */,
+				D62000000000000000000008 /* SpotifyPlaylists.swift */,
+				D62000000000000000000009 /* SpotifyAccount.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -139,6 +145,8 @@
 				D61000000000000000000002 /* PrototypeView.swift in Sources */,
 				D61000000000000000000003 /* PlaybackModel.swift in Sources */,
 				D61000000000000000000005 /* LocalPlaylist.swift in Sources */,
+				D61000000000000000000006 /* SpotifyPlaylists.swift in Sources */,
+				D61000000000000000000007 /* SpotifyAccount.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

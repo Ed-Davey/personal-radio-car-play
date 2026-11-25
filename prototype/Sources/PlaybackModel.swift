@@ -25,6 +25,7 @@ enum PlaybackScenario: String, CaseIterable, Identifiable {
 
 enum ListeningMode: String, CaseIterable, Identifiable {
     case pilot = "My playlist"
+    case spotify = "Spotify"
     case demo = "Sample demo"
 
     var id: Self { self }
@@ -195,9 +196,10 @@ struct DemoSchedule {
     }
 
     var isPaused: Bool { !isPlaying && currentKind != .idle }
-    var canEditPlaylist: Bool { currentKind == .idle && playlist?.isImporting == false }
+    var canEditPlaylist: Bool { mode == .pilot && currentKind == .idle && playlist?.isImporting == false }
     var canPlay: Bool {
-        mode == .demo || isPlaying || isPaused || (canEditPlaylist && playlist?.tracks.isEmpty == false)
+        if mode == .spotify { return false }
+        return mode == .demo || isPlaying || isPaused || (canEditPlaylist && playlist?.tracks.isEmpty == false)
     }
     var progress: Double { duration > 0 ? min(1, elapsed / duration) : 0 }
     var upcoming: [String] {
@@ -354,7 +356,7 @@ struct DemoSchedule {
 
     private var selectedTracks: [SessionTrack] {
         if mode == .demo { return Self.demoTracks }
-        guard let playlist else { return [] }
+        guard mode == .pilot, let playlist else { return [] }
         return playlist.tracks.map { track in
             let artist = track.artist.map { ", by \($0)" } ?? ""
             return SessionTrack(title: track.title, artist: track.artist, source: .file(playlist.audioURL(for: track)),
@@ -365,7 +367,11 @@ struct DemoSchedule {
     private func setReadyDisplay() {
         demoTime = mode == .demo ? DemoSchedule.startTime : .now
         currentTitle = "Ready to listen"
-        currentSubtitle = mode == .demo ? "Start your sample listening session." : "Play your imported tracks in playlist order."
+        switch mode {
+        case .demo: currentSubtitle = "Start your sample listening session."
+        case .pilot: currentSubtitle = "Play your imported tracks in playlist order."
+        case .spotify: currentSubtitle = "Choose a playlist to open in Spotify."
+        }
         currentKind = .idle
     }
 
