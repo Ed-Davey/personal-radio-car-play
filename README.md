@@ -34,4 +34,6 @@ Create each feature branch from `dev`. Merge the feature branch into `V1` for in
 
 Summarise what changed, how you tested it and any device checks still needed. Have Codex review the PR, address its findings and rerun the review on the latest revision. Request human approval when the PR is ready to merge. When build steps, demo behaviour or test results change, update this README and the relevant project document in the same PR.
 
+The [Prototype CI workflow](.github/workflows/prototype-ci.yml) runs on pull requests into `dev` and pushes to `V1`. The macOS job builds the app, verifies its signature and checks the bundled audio. The iOS job builds for Simulator and checks the bundled audio and background-audio setting. Verify locked playback and CarPlay controls on the target iPhone and car.
+
 Follow the [GitHub workflow setup guide](docs/github-workflow/README.md) to configure the bot account, automatic review and human approval on `dev`.
