@@ -55,6 +55,7 @@ flowchart TD
 | --- | --- | --- |
 | Apple SDK, SwiftUI and AVFoundation | Platform tools and native playback. Register or sign one test device using the applicable Apple terms. | Compatible Xcode, iPhone, iOS version and signing route. [Device distribution](https://developer.apple.com/documentation/xcode/distributing-your-app-to-registered-devices) |
 | Local tracks | Import files with provenance and private-playback rights. Bandcamp allows eligible personal downloads and listen-in-another-app use. | Confirm listener has suitable files and editable metadata. [Bandcamp terms](https://bandcamp.com/terms_of_use), [Download help](https://bandcamp.com/zendesk/help/downloading) |
+| ElevenLabs | Prepare short presenter recordings on the Mac and keep them private. Check the selected voice, plan terms and attribution for each intended use. | Try the sample in the prototype, then confirm API access and an agreed credit limit before generating playlist introductions. [Voice Library](https://elevenlabs.io/docs/eleven-creative/voices/voice-library/), [Billing and usage rights](https://elevenlabs.io/docs/overview/administration/billing) |
 | NPR News Now | Personal non-commercial only. Preserve the enclosure, notices and attribution, with a source link. Keep the cache on one device. | Review the exact user-enabled playback and retention configuration under the published terms. [NPR terms](https://www.npr.org/about-npr/179876898/terms-of-use) |
 | DfT Street Manager and HTTPS receiver | Open Government Licence for permitted data reuse. Attribute DfT, comply with service terms and verify SNS notifications. | Confirm individual registration, bootstrap method and hosting costs. Record any package licence if a package is adopted. [DfT listing](https://findtransportdata.dft.gov.uk/dataset/roadworks-service-api-street-manager), [DfT delivery](https://department-for-transport-streetmanager.github.io/street-manager-docs/open-data/) |
 
@@ -72,7 +73,9 @@ Use a manual Cornwall setting. No location permission, route history or app acco
 
 ## AI Usage
 
-Use a local British-English `AVSpeechSynthesizer` voice with fixed scripts for song names, source introductions and roadworks facts. Keep supplied news audio intact. Preview unfamiliar street and artist names, compare speech volume to songs, and count a missed intro when metadata is missing or synthesis fails. Recover by playing music. [Apple on-device speech](https://developer.apple.com/documentation/avfoundation/speech-synthesis)
+Use ElevenLabs for prepared presenter recordings. Try a licensed British-English voice on the Mac and listen before selecting it. The first preview sends a fixed fictional demo line only when the listener explicitly requests generation, and also accepts a downloaded recording. For playlist use, prepare approved introductions while parked and play the resulting files locally. Confirm the data handling before sending real song metadata. Keep API keys on the preparation Mac.
+
+Use British-English `AVSpeechSynthesizer` locally when a prepared clip is missing, stale or unsuitable, and for time-sensitive reports during the pilot. Keep supplied news audio intact. Preview unfamiliar street and artist names, compare speech volume to songs, and count a missed intro when metadata is missing or synthesis fails. Recover by playing music. [ElevenLabs authentication](https://elevenlabs.io/docs/api-reference/authentication), [Apple on-device speech](https://developer.apple.com/documentation/avfoundation/speech-synthesis)
 
 ## Risks & Unknowns
 

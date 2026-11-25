@@ -26,6 +26,7 @@ For a device build, open [the Xcode project](prototype/PersonalRadioPrototype.xc
 | [Feasibility study](Personal-Radio-V1-Feasibility-Study.md) | Music, news and travel sources, rights, technical findings and delivery gates |
 | [Private pilot plan](Personal-Radio-Private-Pilot-Shaping-Plan.md) | Pilot scope, architecture and acceptance criteria |
 | [Prototype guide](prototype/README.md) | Build instructions and demo scenarios |
+| [ElevenLabs presenter preview](prototype/ElevenLabs-Preview.md) | Audition a prepared voice with the Mac prototype |
 | [UI test report](prototype/UI-Test-Report.md) | Desktop test coverage, reproduced defects and remaining checks |
 
 ## Contributing
