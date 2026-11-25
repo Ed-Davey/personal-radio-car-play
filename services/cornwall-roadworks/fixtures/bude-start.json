@@ -1,0 +1,24 @@
+{
+  "event_reference": 165570145,
+  "event_type": "WORK_START",
+  "object_data": {
+    "highway_authority_swa_code": "840",
+    "highway_authority": "CORNWALL COUNCIL",
+    "usrn": "27400995",
+    "street_name": "KERNOW CRESCENT",
+    "area_name": "",
+    "town": "BUDE",
+    "road_category": "4",
+    "actual_start_date_time": "2026-10-01T08:53:57.868Z",
+    "actual_end_date_time": null,
+    "work_status_ref": "in_progress",
+    "permit_status": "granted",
+    "traffic_management_type_ref": "some_carriageway_incursion",
+    "current_traffic_management_type": null,
+    "current_traffic_management_type_ref": null
+  },
+  "event_time": "2026-10-01T08:54:58.009Z",
+  "object_type": "PERMIT",
+  "object_reference": "BC004WH5NW81P-01",
+  "version": 1
+}
