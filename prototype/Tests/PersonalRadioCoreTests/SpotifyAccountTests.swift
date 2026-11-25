@@ -25,7 +25,7 @@ struct SpotifyAccountTests {
         #expect(fields["client_id"] == clientID)
         #expect(fields["response_type"] == "code")
         #expect(fields["redirect_uri"] == "com.ed-davey.personalradio.spotify://auth/callback")
-        #expect(fields["scope"] == "playlist-read-private")
+        #expect(fields["scope"] == "playlist-read-private playlist-read-collaborative")
         #expect(fields["code_challenge_method"] == "S256")
         #expect(fields["code_verifier"] == nil)
         #expect(fields["client_secret"] == nil)

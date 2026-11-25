@@ -567,8 +567,9 @@ private struct SpotifyPlaylistsView: View {
             HStack {
                 Button("Open in Spotify") {
                     message = nil
-                    openURL(playlist.url) { accepted in
-                        if !accepted {
+                    openURL(playlist.url) { @Sendable accepted in
+                        guard !accepted else { return }
+                        Task { @MainActor in
                             message = "The playlist could not open. Check that Spotify or a browser is available."
                         }
                     }
