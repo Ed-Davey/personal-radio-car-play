@@ -88,6 +88,74 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
     }
 }
 
+struct DemoSchedule {
+    // 18 November 2026, 10:00 GMT. The demo advances to sample boundaries
+    // so each scenario fits into one short listening session.
+    static let bulletinHour = Date(timeIntervalSince1970: 1_794_996_000)
+    static let startTime = bulletinHour.addingTimeInterval(-30)
+
+    enum Decision: Equatable {
+        case newsReady, newsWaiting, newsExpired
+        case roadworksReady, roadworksExpired, roadReopened
+
+        var message: String {
+            switch self {
+            case .newsReady: "Fresh bulletin queued at song boundary"
+            case .newsWaiting: "Bulletin still loading. Music continues."
+            case .newsExpired: "Hourly bulletin expired"
+            case .roadworksReady: "Fresh roadworks report queued"
+            case .roadworksExpired: "Travel report expired"
+            case .roadReopened: "Road reopened. Previous closure suppressed."
+            }
+        }
+    }
+
+    struct Boundary {
+        let time: Date
+        let decisions: [Decision]
+    }
+
+    private var handledNews = false
+    private var handledRoadworks = false
+    private var loggedLateNews = false
+
+    mutating func afterTrack(
+        _ index: Int, at time: Date, scenario: PlaybackScenario, newsEnabled: Bool, worksEnabled: Bool
+    ) -> Boundary {
+        let minutes = scenario == .expired ? 16 + 4 * index : 1 + 4 * index
+        let boundaryTime = max(time, Self.bulletinHour.addingTimeInterval(Double(minutes * 60)))
+        var decisions: [Decision] = []
+
+        if newsEnabled && !handledNews {
+            let expiry = Self.bulletinHour.addingTimeInterval(15 * 60)
+            let available = Self.bulletinHour.addingTimeInterval(scenario == .lateNews ? 2 * 60 : 30)
+            if boundaryTime >= expiry {
+                handledNews = true
+                decisions.append(.newsExpired)
+            } else if boundaryTime >= available {
+                handledNews = true
+                decisions.append(.newsReady)
+            } else if !loggedLateNews {
+                loggedLateNews = true
+                decisions.append(.newsWaiting)
+            }
+        }
+
+        if worksEnabled && !handledRoadworks {
+            handledRoadworks = true
+            let update = Self.bulletinHour.addingTimeInterval(30)
+            if scenario == .reopened {
+                decisions.append(.roadReopened)
+            } else if boundaryTime.timeIntervalSince(update) >= 5 * 60 {
+                decisions.append(.roadworksExpired)
+            } else {
+                decisions.append(.roadworksReady)
+            }
+        }
+        return Boundary(time: boundaryTime, decisions: decisions)
+    }
+}
+
 @MainActor @Observable final class PlaybackModel {
     private static let outputError = "Audio output could not start. Check the output and press Play to retry."
     private static let sessionError = "Audio session unavailable. Press Play to try again."
@@ -101,18 +169,13 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
                      introduction: .fixture("intro-\(index + 1)"))
     }
 
-    // 18 November 2026, 10:00 GMT. The demonstration jumps to sample boundary
-    // times so each scenario can be heard within one short listening session.
-    private static let bulletinHour = Date(timeIntervalSince1970: 1_794_996_000)
-    private static let startTime = bulletinHour.addingTimeInterval(-30)
-
     private(set) var currentTitle = "Ready to listen"
     private(set) var currentSubtitle = "Start your sample listening session."
     private(set) var currentKind = PlaybackKind.idle
     private(set) var isPlaying = false
     private(set) var elapsed: Double = 0
     private(set) var duration: Double = 0
-    private(set) var demoTime = PlaybackModel.startTime
+    private(set) var demoTime = DemoSchedule.startTime
     private(set) var phaseLog: [PlaybackEvent] = []
     private(set) var scenario = PlaybackScenario.standard
     private(set) var assetError: String?
@@ -151,9 +214,10 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     @ObservationIgnored private let bundle: Bundle
+    @ObservationIgnored private let makePlayer: @MainActor (URL) throws -> AVAudioPlayer
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private var progressTimer: Timer?
-    @ObservationIgnored private var audioStart = PlaybackModel.startTime
+    @ObservationIgnored private var audioStart = DemoSchedule.startTime
     @ObservationIgnored private var playerID: UUID?
     @ObservationIgnored private var delegate: AudioCompletion?
     @ObservationIgnored private var speaker: AVSpeechSynthesizer?
@@ -166,13 +230,17 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
     private var sessionTracks: [SessionTrack] = []
     private var trackIndex = 0
     private var pending: [AudioSegment] = []
-    private var handledNews = false
-    private var handledTravel = false
-    private var loggedLateNews = false
+    @ObservationIgnored private var demoSchedule = DemoSchedule()
     private var completed = false
 
-    init(resourceBundle: Bundle = .main, mode: ListeningMode = .demo, playlistDirectory: URL? = nil) {
+    init(
+        resourceBundle: Bundle = .main,
+        mode: ListeningMode = .demo,
+        playlistDirectory: URL? = nil,
+        makePlayer: @escaping @MainActor (URL) throws -> AVAudioPlayer = { try AVAudioPlayer(contentsOf: $0) }
+    ) {
         bundle = resourceBundle
+        self.makePlayer = makePlayer
         self.mode = mode
         do {
             playlist = try LocalPlaylist(directory: playlistDirectory)
@@ -212,9 +280,7 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
         pending = []
         sessionTracks = []
         trackIndex = 0
-        handledNews = false
-        handledTravel = false
-        loggedLateNews = false
+        demoSchedule = DemoSchedule()
         completed = false
         assetError = nil
         phaseLog = []
@@ -297,7 +363,7 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func setReadyDisplay() {
-        demoTime = mode == .demo ? Self.startTime : .now
+        demoTime = mode == .demo ? DemoSchedule.startTime : .now
         currentTitle = "Ready to listen"
         currentSubtitle = mode == .demo ? "Start your sample listening session." : "Play your imported tracks in playlist order."
         currentKind = .idle
@@ -317,7 +383,7 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
                 return
             }
             guard let url = audioURL(for: segment.source),
-                  let next = try? AVAudioPlayer(contentsOf: url), next.duration.isFinite, next.duration > 0 else {
+                  let next = try? makePlayer(url), next.duration.isFinite, next.duration > 0 else {
                 recordAssetError("Missing or invalid audio for \(segment.title).")
                 if segment.kind == .track {
                     completeSession(failed: true)
@@ -448,39 +514,24 @@ private final class SpeechCompletion: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func segmentsAtBoundary(after index: Int) -> [AudioSegment] {
-        let minutes = scenario == .expired ? 16 + 4 * index : 1 + 4 * index
-        demoTime = max(demoTime, Self.bulletinHour.addingTimeInterval(Double(minutes * 60)))
+        let boundary = demoSchedule.afterTrack(
+            index, at: demoTime, scenario: scenario, newsEnabled: newsEnabled, worksEnabled: worksEnabled
+        )
+        demoTime = boundary.time
         var segments: [AudioSegment] = []
 
-        if newsEnabled && !handledNews {
-            let expiry = Self.bulletinHour.addingTimeInterval(15 * 60)
-            let available = Self.bulletinHour.addingTimeInterval(scenario == .lateNews ? 2 * 60 : 30)
-            if demoTime >= expiry {
-                handledNews = true
-                record("Hourly bulletin expired")
-            } else if demoTime >= available {
-                handledNews = true
+        for decision in boundary.decisions {
+            switch decision {
+            case .newsReady:
                 segments.append(AudioSegment(kind: .news, title: "Hourly news bulletin",
                                              subtitle: "Sample bulletin · 10:00 edition", source: .fixture("news")))
-                record("Fresh bulletin queued at song boundary")
-            } else if !loggedLateNews {
-                loggedLateNews = true
-                record("Bulletin still loading. Music continues.")
-            }
-        }
-
-        if worksEnabled && !handledTravel {
-            handledTravel = true
-            let update = Self.bulletinHour.addingTimeInterval(30)
-            if scenario == .reopened {
-                record("Road reopened. Previous closure suppressed.")
-            } else if demoTime.timeIntervalSince(update) >= 5 * 60 {
-                record("Travel report expired")
-            } else {
+            case .roadworksReady:
                 segments.append(AudioSegment(kind: .travel, title: "Cornwall roadworks",
                                              subtitle: "Sample report · Lantern Cove", source: .fixture("travel")))
-                record("Fresh roadworks report queued")
+            default:
+                break
             }
+            record(decision.message)
         }
         return segments
     }

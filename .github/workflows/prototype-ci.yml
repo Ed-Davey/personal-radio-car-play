@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  tests:
+    name: Unit and integration tests
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run Swift unit and integration tests
+        run: swift test --package-path prototype --disable-xctest
+
+      - name: Run Cornwall permit replay tests
+        run: python3 -B -m unittest discover -s services/cornwall-roadworks -v
+
+      - name: Run ElevenLabs preview tests
+        run: python3 -B -m unittest discover -s prototype/tools/tests -v
+
   macos:
     name: macOS prototype build
     runs-on: macos-15
